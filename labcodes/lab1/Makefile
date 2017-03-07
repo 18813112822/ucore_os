@@ -267,3 +267,10 @@ tags:
 	$(V)find . -type f -name "*.[chS]" >cscope.files
 	$(V)cscope -bq 
 	$(V)ctags -L cscope.files
+
+
+lab1-mon: $(UCOREIMG)  
+	$(V)$(TERMINAL) -e "$(QEMU) -S -s -d in_asm -D $(BINDIR)/q.log -monitor stdio -hda $< -serial null"  
+	$(V)sleep 2  
+	$(V)$(TERMINAL) -e "gdb -q -tui -x  tools/gdbinit"
+
