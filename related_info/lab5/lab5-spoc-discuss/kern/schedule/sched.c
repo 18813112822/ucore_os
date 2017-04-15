@@ -6,6 +6,7 @@
 
 void
 wakeup_proc(struct proc_struct *proc) {
+	cprintf("     wake up %d\n",proc->pid);
     assert(proc->state != PROC_ZOMBIE);
     bool intr_flag;
     local_intr_save(intr_flag);
@@ -23,6 +24,7 @@ wakeup_proc(struct proc_struct *proc) {
 
 void
 schedule(void) {
+	
     bool intr_flag;
     list_entry_t *le, *last;
     struct proc_struct *next = NULL;
@@ -44,6 +46,8 @@ schedule(void) {
         }
         next->runs ++;
         if (next != current) {
+			cprintf("     from %d to %d schedule\n",current->pid,next->pid);
+			
             proc_run(next);
         }
     }

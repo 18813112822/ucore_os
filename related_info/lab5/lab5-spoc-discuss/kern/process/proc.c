@@ -208,9 +208,18 @@ proc_run(struct proc_struct *proc) {
         struct proc_struct *prev = current, *next = proc;
         local_intr_save(intr_flag);
         {
+		/*
+			if (prev->mm!=NULL)
+				cprintf("user  to  kernel\n");
+			else
+				cprintf("kernel to user \n");
+*/
+			cprintf("     switch kstack\n");
             current = proc;
             load_esp0(next->kstack + KSTACKSIZE);
             lcr3(next->cr3);
+            cprintf("     switch cr3\n");
+			cprintf("     switch context\n");
             switch_to(&(prev->context), &(next->context));
         }
         local_intr_restore(intr_flag);
@@ -222,6 +231,7 @@ proc_run(struct proc_struct *proc) {
 //       after switch_to, the current proc will execute here.
 static void
 forkret(void) {
+	//mcprintf("in forkret current tf ring%x\n",current->tf->tf_cs & 3);
     forkrets(current->tf);
 }
 
@@ -372,6 +382,7 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
  */
 int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
+	cprintf("     do_fork, fork ring is %x\n",tf->tf_cs & 3);
     int ret = -E_NO_FREE_PROC;
     struct proc_struct *proc;
     if (nr_process >= MAX_PROCESS) {
@@ -390,7 +401,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
      *                 setup the kernel entry point and stack of process
      *   hash_proc:    add proc into proc hash_list
      *   get_pid:      alloc a unique pid for process
-     *   wakeup_proc:  set proc->state = PROC_RUNNABLE
+     *   wakup_proc:   set proc->state = PROC_RUNNABLE
      * VARIABLES:
      *   proc_list:    the process set's list
      *   nr_process:   the number of process set
@@ -401,7 +412,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //    3. call copy_mm to dup OR share mm according clone_flag
     //    4. call copy_thread to setup tf & context in proc_struct
     //    5. insert proc_struct into hash_list && proc_list
-    //    6. call wakeup_proc to make the new child process RUNNABLE
+    //    6. call wakup_proc to make the new child process RUNNABLE
     //    7. set ret vaule using child proc's pid
     if ((proc = alloc_proc()) == NULL) {
         goto fork_out;
@@ -447,6 +458,7 @@ bad_fork_cleanup_proc:
 //   3. call scheduler to switch to other process
 int
 do_exit(int error_code) {
+	cprintf("++++++%d exit ,recource relase!++++++\n",current->pid);
     if (current == idleproc) {
         panic("idleproc exit.\n");
     }
@@ -458,12 +470,16 @@ do_exit(int error_code) {
     if (mm != NULL) {
         lcr3(boot_cr3);
         if (mm_count_dec(mm) == 0) {
+			cprintf("     vma relaese and release page dir entry exit_mmap\n");
             exit_mmap(mm);
+			cprintf("     relase page table put_pgdir\n");
             put_pgdir(mm);
+			cprintf("     release mm\n");
             mm_destroy(mm);
         }
         current->mm = NULL;
     }
+	cprintf("++++++%d exit ,recource release end!++++++\n\n",current->pid);
     current->state = PROC_ZOMBIE;
     current->exit_code = error_code;
     
@@ -504,6 +520,7 @@ do_exit(int error_code) {
  */
 static int
 load_icode(unsigned char *binary, size_t size) {
+	cprintf("+++++alloc user  resource ++++++\n");
     if (current->mm != NULL) {
         panic("load_icode: current->mm must be empty.\n");
     }
@@ -511,18 +528,23 @@ load_icode(unsigned char *binary, size_t size) {
     int ret = -E_NO_MEM;
     struct mm_struct *mm;
     //(1) create a new mm for current process
+	cprintf("     create a mm  resource \n");
     if ((mm = mm_create()) == NULL) {
         goto bad_mm;
     }
     //(2) create a new PDT, and mm->pgdir= kernel virtual addr of PDT
+	cprintf("     create a PDT  resource \n");
     if (setup_pgdir(mm) != 0) {
         goto bad_pgdir_cleanup_mm;
     }
     //(3) copy TEXT/DATA section, build BSS parts in binary to memory space of process
+	cprintf("     copy TEXT/DATA section, build BSS parts in binary to memory space of process \n");
     struct Page *page;
     //(3.1) get the file header of the bianry program (ELF format)
+	cprintf("     get the file header of the bianry program \n");
     struct elfhdr *elf = (struct elfhdr *)binary;
     //(3.2) get the entry of the program section headers of the bianry program (ELF format)
+	cprintf("     get the entry of the program section headers of the bianry program \n");
     struct proghdr *ph = (struct proghdr *)(binary + elf->e_phoff);
     //(3.3) This program is valid?
     if (elf->e_magic != ELF_MAGIC) {
@@ -545,6 +567,7 @@ load_icode(unsigned char *binary, size_t size) {
             continue ;
         }
     //(3.5) call mm_map fun to setup the new vma ( ph->p_va, ph->p_memsz)
+		cprintf("     get new vma \n");
         vm_flags = 0, perm = PTE_U;
         if (ph->p_flags & ELF_PF_X) vm_flags |= VM_EXEC;
         if (ph->p_flags & ELF_PF_W) vm_flags |= VM_WRITE;
@@ -560,8 +583,10 @@ load_icode(unsigned char *binary, size_t size) {
         ret = -E_NO_MEM;
 
      //(3.6) alloc memory, and  copy the contents of every program section (from, from+end) to process's memory (la, la+end)
-        end = ph->p_va + ph->p_filesz;
+        cprintf("     alloc memory \n");
+		end = ph->p_va + ph->p_filesz;
      //(3.6.1) copy TEXT/DATA section of bianry program
+		cprintf("     copy TEXT/DATA section of bianry program\n");
         while (start < end) {
             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
                 goto bad_cleanup_mmap;
@@ -575,6 +600,7 @@ load_icode(unsigned char *binary, size_t size) {
         }
 
       //(3.6.2) build BSS section of binary program
+		cprintf("     build BSS section of binary program\n");
         end = ph->p_va + ph->p_memsz;
         if (start < la) {
             /* ph->p_memsz == ph->p_filesz */
@@ -602,6 +628,7 @@ load_icode(unsigned char *binary, size_t size) {
         }
     }
     //(4) build user stack memory
+	cprintf("     build user stack memory\n");
     vm_flags = VM_READ | VM_WRITE | VM_STACK;
     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
         goto bad_cleanup_mmap;
@@ -612,12 +639,14 @@ load_icode(unsigned char *binary, size_t size) {
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
     
     //(5) set current process's mm, sr3, and set CR3 reg = physical addr of Page Directory
+	cprintf("     set current process's mm, sr3, and set CR3 reg \n");
     mm_count_inc(mm);
     current->mm = mm;
     current->cr3 = PADDR(mm->pgdir);
     lcr3(PADDR(mm->pgdir));
 
     //(6) setup trapframe for user environment
+	cprintf("     setup trapframe for user environment \n");
     struct trapframe *tf = current->tf;
     memset(tf, 0, sizeof(struct trapframe));
     /* LAB5:EXERCISE1 YOUR CODE
@@ -629,6 +658,14 @@ load_icode(unsigned char *binary, size_t size) {
      *          tf_eip should be the entry point of this binary program (elf->e_entry)
      *          tf_eflags should be set to enable computer to produce Interrupt
      */
+	cprintf("+++++alloc resource end++++\n\n");
+	cprintf("++++++switch from kernel ring0 to user ring3!++++\n");
+	cprintf("      switch cs\n");
+	cprintf("      switch ds es ss\n");
+	cprintf("      switch esp\n");
+	cprintf("      switch eip\n");
+	cprintf("      switch eflags\n");
+	cprintf("++++++switch from kernel ring0 to user ring3! end ++++\n\n");
     tf->tf_cs = USER_CS;
     tf->tf_ds = tf->tf_es = tf->tf_ss = USER_DS;
     tf->tf_esp = USTACKTOP;
@@ -647,10 +684,11 @@ bad_mm:
     goto out;
 }
 
-// do_execve - call exit_mmap(mm)&put_pgdir(mm) to reclaim memory space of current process
+// do_execve - call exit_mmap(mm)&pug_pgdir(mm) to reclaim memory space of current process
 //           - call load_icode to setup new memory space accroding binary prog.
 int
 do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
+	cprintf("++++++create user process!\n");
     struct mm_struct *mm = current->mm;
     if (!user_mem_check(mm, (uintptr_t)name, len, 0)) {
         return -E_INVAL;
@@ -774,6 +812,7 @@ do_kill(int pid) {
 // kernel_execve - do SYS_exec syscall to exec a user program called by user_main kernel_thread
 static int
 kernel_execve(const char *name, unsigned char *binary, size_t size) {
+	cprintf("sys_exec , i will create a user program!\n");
     int ret, len = strlen(name);
     asm volatile (
         "int %1;"
@@ -861,6 +900,7 @@ proc_init(void) {
     idleproc->need_resched = 1;
     set_proc_name(idleproc, "idle");
     nr_process ++;
+	cprintf("++++++creat a idle\n");
 
     current = idleproc;
 

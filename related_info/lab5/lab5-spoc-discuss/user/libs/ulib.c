@@ -12,12 +12,19 @@ exit(int error_code) {
 
 int
 fork(void) {
-    return sys_fork();
+	cprintf("\n++++syscall fork ,from user to kernel\n");
+	int a=sys_fork();
+	cprintf("++++syscall fork end,from kernel to user\n\n");
+    return a;
+	
 }
 
 int
 wait(void) {
-    return sys_wait(0, NULL);
+	cprintf("\n++++syscall wait ,from user to kernel\n");
+	int a=sys_wait(0, NULL);
+	cprintf("++++syscall wait end,from kernel to user\n\n");
+    return a;
 }
 
 int
@@ -27,7 +34,9 @@ waitpid(int pid, int *store) {
 
 void
 yield(void) {
+	cprintf("\n++++++syscall yield,switch user to kernel \n");
     sys_yield();
+	cprintf("++++++syscall yield end ,switch kernel to user \n\n");
 }
 
 int

@@ -37,6 +37,7 @@ sys_exec(uint32_t arg[]) {
 
 static int
 sys_yield(uint32_t arg[]) {
+
     return do_yield();
 }
 
@@ -80,9 +81,11 @@ static int (*syscalls[])(uint32_t arg[]) = {
 
 void
 syscall(void) {
+	
     struct trapframe *tf = current->tf;
     uint32_t arg[5];
     int num = tf->tf_regs.reg_eax;
+	//cprintf("wo du shu shao ni bu yao pian wo!%d\n",tf->tf_cs);
     if (num >= 0 && num < NUM_SYSCALLS) {
         if (syscalls[num] != NULL) {
             arg[0] = tf->tf_regs.reg_edx;
